@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -11,6 +10,8 @@ use procfs::process::all_processes;
 use rmesg::log_entries;
 use rmesg::Backend;
 use signal_hook::flag;
+
+mod notifiers;
 
 fn is_string_numeric(str: String) -> bool {
     for c in str.chars() {
