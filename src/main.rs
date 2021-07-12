@@ -1,15 +1,17 @@
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::{thread, time};
+use std::thread;
+use std::time;
 
 use clap::{App, Arg};
 use gethostname::gethostname;
 use lru::LruCache;
-use procfs::process::all_processes;
+use procfs;
 use rmesg::log_entries;
 use rmesg::Backend;
 use signal_hook::flag;
+use tokio::runtime::Runtime;
 
 mod notifiers;
 
@@ -27,13 +29,19 @@ fn get_pid_max() -> usize {
     return content.trim().parse::<usize>().unwrap();
 }
 
-fn notify_oom(pid: i32, cmdline: String) {
-    println!(
-        "hostname:{:?} pid:{} cmdline:{}",
+fn notify_oom(pid: i32, cmdline: String) -> String {
+    let message = format!(
+        "time:{} hostname:{:?} pid:{} cmdline:{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
         gethostname(),
         pid,
         cmdline
     );
+
+    return message;
 }
 
 fn main() {
@@ -50,23 +58,52 @@ fn main() {
         .about("Notify about oomed processes reporting full command line")
         .arg(
             Arg::new("process-refresh")
-                .short('p')
                 .long("process-refresh")
                 .value_name("process_refresh")
                 .about("Set the frequency to refresh the list of processes in milliseconds")
-                .takes_value(false)
+                .takes_value(true)
                 .default_value("5000"),
         )
         .arg(
             Arg::new("kernel-log-refresh")
-                .short('k')
                 .long("kernel-log-refresh")
                 .value_name("kernel_refresh")
                 .about("Set the frequency to refresh the list of processes in milliseconds")
                 .takes_value(true)
                 .default_value("10000"),
         )
-        .get_matches();
+        .arg(
+            Arg::new("syslog-proto")
+                .long("syslog-proto")
+                .value_name("syslog_proto")
+                .about("Set protocol to connect to the syslog-server. Options: unix/tcp/udp")
+                .takes_value(true)
+                .required(false)
+        )
+        .arg(
+            Arg::new("syslog-server")
+                .long("syslog-server")
+                .value_name("syslog_server")
+                .about("Syslog server where to send the oom events. It must have the form hostname:port. If unix protocol is used this option is ignored")
+                .takes_value(true)
+                .required(false)
+        )
+        .arg(
+            Arg::new("elasticsearch-server")
+                .long("elasticsearch-server")
+                .value_name("elasticsearch_server")
+                .about("Elasticsearch server where to send the events. It must have the format http://hostname:port")
+                .takes_value(true)
+                .required(false)
+        )
+        .arg(
+            Arg::new("elasticsearch-index")
+                .long("elasticsearch-index")
+                .value_name("elasticsearch_index")
+                .about("The name of the elasticsearch index where to index the oom events")
+                .takes_value(true)
+                .required(false)
+        ).get_matches();
 
     if let Some(p_r) = matches.value_of("process-refresh") {
         sleep_time_b = time::Duration::from_millis(p_r.parse::<u64>().unwrap());
@@ -107,6 +144,27 @@ fn main() {
     });
 
     let dmesg_browser = thread::spawn(move || {
+        let mut syslog_proto = "";
+        let mut syslog_server = "";
+        let mut elasticsearch_server = "";
+        let mut elasticsearch_index = "oom-events";
+
+        if let Some(s_p) = matches.value_of("syslog-proto") {
+            syslog_proto = s_p;
+        }
+
+        if let Some(s_s) = matches.value_of("syslog-server") {
+            syslog_server = s_s.clone();
+        }
+
+        if let Some(e_s) = matches.value_of("elasticsearch-server") {
+            elasticsearch_server = e_s.clone();
+        }
+
+        if let Some(e_i) = matches.value_of("elasticsearch-index") {
+            elasticsearch_index = e_i;
+        }
+
         while !term_d.load(Ordering::Relaxed) {
             {
                 let mut procs = procs_d.lock().unwrap();
@@ -117,7 +175,7 @@ fn main() {
 
                     /*
                         Example kernel log entries we want to detect:
-                        [Sat Jun 26 22:34:14 2021] Out of memory: Killed process 9865 (oom_trigger) total-vm:7468696kB, ... a lot more stuff ...
+                        Out of memory: Killed process 9865 (oom_trigger) total-vm:7468696kB, ... a lot more stuff ...
                     */
 
                     if lowercase_message.contains("out of memory:") {
@@ -129,7 +187,34 @@ fn main() {
                                     Some(cmdline) => {
                                         let full_cmdline = cmdline.clone();
                                         procs.pop(&pid);
-                                        notify_oom(pid, full_cmdline);
+                                        let oom_event = notify_oom(pid, full_cmdline);
+                                        println!("{}", &oom_event);
+
+                                        if !elasticsearch_index.is_empty()
+                                            && !elasticsearch_server.is_empty()
+                                        {
+                                            let rt = Runtime::new().unwrap();
+
+                                            match rt.block_on(notifiers::elasticsearch_notifier(
+                                                &oom_event,
+                                                elasticsearch_index.to_string(),
+                                                elasticsearch_server.to_string(),
+                                            )) {
+                                                Err(e) => println!("Error while sending the oom event to the configured Elasticsearch: {}", e.to_string()),
+                                                _ => (),
+                                            }
+                                        }
+
+                                        if !syslog_proto.is_empty() && !syslog_server.is_empty() {
+                                            match notifiers::syslog_notifier(
+                                                &oom_event,
+                                                syslog_proto.to_string(),
+                                                syslog_server.to_string(),
+                                            ) {
+                                                Err(e) => println!("Error while sending the oom event to the configured syslog: {}", e.to_string()),
+                                                _ => (),
+                                            }
+                                        }
                                     }
                                     _ => (),
                                 }
