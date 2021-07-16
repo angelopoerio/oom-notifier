@@ -37,7 +37,7 @@ Send an event to a remote syslog server (over TCP):
 
 # Run on Kubernetes
 It is possible to run the service as a [Daemonset](https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/) on a Kubernetes cluster.
-Depending on the configuration it might be needed to run it as a priviled Daemonset (see [here](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/))
+Depending on the configuration it might be needed to run it as a privileged Daemonset (see [here](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/))
 
 
 # Caveats
