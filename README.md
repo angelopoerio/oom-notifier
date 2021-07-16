@@ -1,6 +1,13 @@
 # About
 oom-notifier is a small daemon to be notified about oomed processes. It can report the full command line of the oomed process (something that it's not printed in the kernel ring buffer).
 
+# How to build
+You need a working installation of the [Rust](https://www.rust-lang.org/) compiler, then you can build the service issuing the following command:
+```bash
+cargo build --release
+```
+
+if the build completes then you will find the compiled service at the following path in the current directory: **target/release/oom-notifier**
 
 # How to use
 The daemon needs to run with enough privileges to access /dev/kmsg (kernel logs) so it can know about OOMs happening in the system.
@@ -22,8 +29,8 @@ Depending on the configuration it might be needed to run it as a priviled pod (s
 # Caveats
 The tool can only notify about oom caused by the Linux oom killer. If you use a userspace mechanism then it will not be able to detect them.
 Some example of userspace services that act as oom-killer:
-* [https://github.com/facebookincubator/oomd](oomd)
-* [https://github.com/rfjakob/earlyoom](earlyoom)
+* [oomd](https://github.com/facebookincubator/oomd)
+* [earlyoom](https://github.com/rfjakob/earlyoom)
 
 
 
