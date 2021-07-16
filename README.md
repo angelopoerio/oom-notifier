@@ -6,8 +6,17 @@ You need a working installation of the [Rust](https://www.rust-lang.org/) compil
 ```bash
 cargo build --release
 ```
-
 if the build completes then you will find the compiled service at the following path in the current directory: **target/release/oom-notifier**
+
+# Run as a docker container
+It is possible to build a docker image of the service issuing the following command (after building the service):
+```bash
+docker build -t oom-notifier .
+```
+and then run it:
+```bash
+docker run --privileged  oom-notifier /oom-notifier
+```
 
 # How to use
 The daemon needs to run with enough privileges to access /dev/kmsg (kernel logs) so it can know about OOMs happening in the system.
