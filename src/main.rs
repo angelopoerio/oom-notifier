@@ -5,11 +5,11 @@ use std::thread;
 use std::time;
 
 use clap::{App, Arg};
-use gethostname::gethostname;
 use lru::LruCache;
 use procfs;
 use rmesg::log_entries;
 use rmesg::Backend;
+use serde_json::json;
 use signal_hook::flag;
 use tokio::runtime::Runtime;
 
@@ -29,17 +29,16 @@ fn get_pid_max() -> usize {
     return content.trim().parse::<usize>().unwrap();
 }
 
-fn notify_oom(pid: i32, cmdline: String) -> String {
-    let message = format!(
-        "time:{} hostname:{:?} pid:{} cmdline:{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis(),
-        gethostname(),
-        pid,
-        cmdline
-    );
+fn build_oom_event(pid: i32, cmdline: String) -> serde_json::Value {
+    let machine_hostname = match fs::read_to_string("/proc/sys/kernel/hostname") {
+        Ok(host_name) => host_name.trim().to_string(),
+        Err(e) => e.to_string(),
+    };
+    let message = json!({ "cmdline": cmdline, "pid": pid.to_string(), "hostname":machine_hostname,
+                "time": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis().to_string()});
 
     return message;
 }
@@ -103,7 +102,24 @@ fn main() {
                 .about("The name of the elasticsearch index where to index the oom events")
                 .takes_value(true)
                 .required(false)
-        ).get_matches();
+        )
+        .arg(
+            Arg::new("kafka-brokers")
+                .long("kafka-brokers")
+                .value_name("kafka_brokers")
+                .about("Kafka cluster where to send the events. It must have the format broker1:port1,broker2:port2, ... , brokerN:portN")
+                .takes_value(true)
+                .required(false)
+        )
+        .arg(
+            Arg::new("kafka-topic")
+                .long("kafka-topic")
+                .value_name("kafka_topic")
+                .about("The name of the kafka topic where to send the oom events")
+                .takes_value(true)
+                .required(false)
+        )
+        .get_matches();
 
     if let Some(p_r) = matches.value_of("process-refresh") {
         sleep_time_b = time::Duration::from_millis(p_r.parse::<u64>().unwrap());
@@ -147,7 +163,9 @@ fn main() {
         let mut syslog_proto = "";
         let mut syslog_server = "";
         let mut elasticsearch_server = "";
-        let mut elasticsearch_index = "oom-events";
+        let mut elasticsearch_index = "";
+        let mut kafka_brokers = "";
+        let mut kafka_topic = "";
 
         if let Some(s_p) = matches.value_of("syslog-proto") {
             syslog_proto = s_p;
@@ -163,6 +181,14 @@ fn main() {
 
         if let Some(e_i) = matches.value_of("elasticsearch-index") {
             elasticsearch_index = e_i;
+        }
+
+        if let Some(k_b) = matches.value_of("kafka-brokers") {
+            kafka_brokers = k_b;
+        }
+
+        if let Some(k_t) = matches.value_of("kafka-topic") {
+            kafka_topic = k_t;
         }
 
         while !term_d.load(Ordering::Relaxed) {
@@ -187,13 +213,14 @@ fn main() {
                                     Some(cmdline) => {
                                         let full_cmdline = cmdline.clone();
                                         procs.pop(&pid);
-                                        let oom_event = notify_oom(pid, full_cmdline);
+                                        let oom_event = build_oom_event(pid, full_cmdline);
                                         println!("{}", &oom_event);
 
                                         if !elasticsearch_index.is_empty()
                                             && !elasticsearch_server.is_empty()
                                         {
                                             let rt = Runtime::new().unwrap();
+                                            println!("Sending event to Elasticsearch");
 
                                             match rt.block_on(notifiers::elasticsearch_notifier(
                                                 &oom_event,
@@ -205,9 +232,19 @@ fn main() {
                                             }
                                         }
 
+                                        if !kafka_topic.is_empty() && !kafka_brokers.is_empty() {
+                                            println!("Send event to Kafka");
+
+                                            match notifiers::kafka_notifier(&oom_event.to_string(), kafka_topic.to_string(), kafka_brokers.split(",").map(str::to_string).collect()) {
+                                                Err(e) => println!("Error while send the oom event to the configured Kafka: {}", e.to_string()),
+                                                _ => (),
+                                            }
+                                        }
+
                                         if !syslog_proto.is_empty() && !syslog_server.is_empty() {
+                                            println!("Sending event to syslog");
                                             match notifiers::syslog_notifier(
-                                                &oom_event,
+                                                &oom_event.to_string(),
                                                 syslog_proto.to_string(),
                                                 syslog_server.to_string(),
                                             ) {
