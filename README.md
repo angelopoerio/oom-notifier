@@ -17,13 +17,13 @@ docker build -t oom-notifier .
 ```
 and then run it:
 ```bash
-docker run --privileged  oom-notifier /oom-notifier
+docker run -v /proc:/proc --privileged  oom-notifier /oom-notifier
 ```
 
 
 # How to use
 The daemon needs to run with enough privileges to access **/dev/kmsg** (kernel logs) so it can know about OOMs happening in the system.
-The events can be sent to different backends, at the moment **Syslog** and **Elasticsearch** are supported.
+The events can be sent to different backends, at the moment **Syslog**, **Elasticsearch** and **Kafka** are supported.
 Send event to an elasticsearch cluster:
 ```bash
 ./oom-notifier --elasticsearch-server https://my-elasticsearch-cluster:9200 --elasticsearch-index my-index
@@ -34,10 +34,14 @@ Send an event to a remote syslog server (over TCP):
 ./oom-notifier --syslog-server my-syslog-server:9999 --syslog-proto tcp
 ```
 
+Send an event to a Kafka cluster:
+```bash
+./oom-notifier --kafka-topic oom-events --kafka-brokers broker1:9092,broker2:9092,broker3:9092
+```
 
 # Run on Kubernetes
 It is possible to run the service as a [Daemonset](https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/) on a Kubernetes cluster.
-Depending on the configuration it might be needed to run it as a privileged Daemonset (see [here](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/))
+It must be run as a **privileged** Daemonset and with the option **hostPID: true** enabled (see [here](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/) and [here](https://kubernetes.io/docs/concepts/policy/pod-security-policy/#host-namespaces))
 
 
 # Caveats
