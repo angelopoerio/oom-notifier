@@ -236,7 +236,7 @@ fn main() {
                                             println!("Send event to Kafka");
 
                                             match notifiers::kafka_notifier(&oom_event.to_string(), kafka_topic.to_string(), kafka_brokers.split(",").map(str::to_string).collect()) {
-                                                Err(e) => println!("Error while send the oom event to the configured Kafka: {}", e.to_string()),
+                                                Err(e) => println!("Error while sending the oom event to the configured Kafka: {}", e.to_string()),
                                                 _ => (),
                                             }
                                         }
