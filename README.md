@@ -41,7 +41,8 @@ Send an event to a Kafka cluster:
 
 # Run on Kubernetes
 It is possible to run the service as a [Daemonset](https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/) on a Kubernetes cluster.
-It must be run as a **privileged** Daemonset and with the option **hostPID** enabled (see [here](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/) and [here](https://kubernetes.io/docs/concepts/policy/pod-security-policy/#host-namespaces))
+It must be run as a **privileged** Daemonset and with the option **hostPID** enabled (see [here](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/) and [here](https://kubernetes.io/docs/concepts/policy/pod-security-policy/#host-namespaces)).
+An example YAML template ready to be deployed (after adapting it to your environment) is available at **k8s/daemonset.yaml**.
 
 
 # Caveats

@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: oom-notifier
+  labels:
+    k8s-app: oom-notifier
+spec:
+  selector:
+    matchLabels:
+      name: oom-notifier
+  template:
+    metadata:
+      labels:
+        name: oom-notifier
+    spec:
+      hostPID: true
+      containers:
+        - resources:
+            requests:
+              cpu: 300m
+          securityContext:
+            privileged: true
+          image: <your-registry/image> # this should point to a registry where you host an image of oom-notifier
+          name: oom-notifier
+          command: ["/oom-notifier"]
+          args: ["--syslog-proto unix"] # specify here the option you prefer to run the daemon
