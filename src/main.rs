@@ -241,7 +241,10 @@ fn main() {
                                             }
                                         }
 
-                                        if !syslog_proto.is_empty() && !syslog_server.is_empty() {
+                                        if syslog_proto == "unix"
+                                            || (!syslog_proto.is_empty()
+                                                && !syslog_server.is_empty())
+                                        {
                                             println!("Sending event to syslog");
                                             match notifiers::syslog_notifier(
                                                 &oom_event.to_string(),
