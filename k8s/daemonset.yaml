@@ -23,4 +23,4 @@ spec:
           image: <your-registry/image> # this should point to a registry where you host an image of oom-notifier
           name: oom-notifier
           command: ["/oom-notifier"]
-          args: ["--syslog-proto unix"] # specify here the options you prefer to run the daemon
+          args: ["--syslog-proto", "unix"] # specify here the options you prefer to run the daemon
