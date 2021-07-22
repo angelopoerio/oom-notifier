@@ -24,17 +24,17 @@ docker run -v /proc:/proc --privileged  oom-notifier /oom-notifier
 # How to use
 The daemon needs to run with enough privileges to access **/dev/kmsg** (kernel logs) so it can know about OOMs happening in the system.
 The events can be sent to different backends, at the moment **Syslog**, **Elasticsearch** and **Kafka** are supported.
-Send event to an elasticsearch cluster:
+Send events to an elasticsearch cluster:
 ```bash
 ./oom-notifier --elasticsearch-server https://my-elasticsearch-cluster:9200 --elasticsearch-index my-index
 ```
 
-Send an event to a remote syslog server (over TCP):
+Send events to a remote syslog server (over TCP):
 ```bash
 ./oom-notifier --syslog-server my-syslog-server:9999 --syslog-proto tcp
 ```
 
-Send an event to a Kafka cluster:
+Send events to a Kafka cluster:
 ```bash
 ./oom-notifier --kafka-topic oom-events --kafka-brokers broker1:9092,broker2:9092,broker3:9092
 ```
