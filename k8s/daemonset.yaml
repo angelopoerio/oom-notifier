@@ -24,3 +24,8 @@ spec:
           name: oom-notifier
           command: ["/oom-notifier"]
           args: ["--syslog-proto", "unix"] # specify here the options you prefer to run the daemon
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
