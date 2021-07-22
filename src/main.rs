@@ -33,10 +33,10 @@ fn get_pid_max() -> usize {
 fn build_oom_event(pid: i32, cmdline: String) -> serde_json::Value {
     let mut machine_hostname = "";
     match env::var("HOSTNAME") {
-        Ok(val) => machine_hostname = val,
+        Ok(val) => machine_hostname = &val,
         Err(_) => match fs::read_to_string("/proc/sys/kernel/hostname") {
-            Ok(host_name) => machine_hostname = host_name.trim().to_string(),
-            Err(e) => machine_hostname = e.to_string(),
+            Ok(host_name) => machine_hostname = &host_name.trim().to_string(),
+            Err(e) => machine_hostname = &e.to_string(),
         },
     }
     let message = json!({ "cmdline": cmdline, "pid": pid.to_string(), "hostname":machine_hostname,
