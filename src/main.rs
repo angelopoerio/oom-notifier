@@ -1,3 +1,4 @@
+use std::env;
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -30,10 +31,14 @@ fn get_pid_max() -> usize {
 }
 
 fn build_oom_event(pid: i32, cmdline: String) -> serde_json::Value {
-    let machine_hostname = match fs::read_to_string("/proc/sys/kernel/hostname") {
-        Ok(host_name) => host_name.trim().to_string(),
-        Err(e) => e.to_string(),
-    };
+    let mut machine_hostname = "";
+    match env::var("HOSTNAME") {
+        Ok(val) => machine_hostname = val,
+        Err(_) => match fs::read_to_string("/proc/sys/kernel/hostname") {
+            Ok(host_name) => machine_hostname = host_name.trim().to_string(),
+            Err(e) => machine_hostname = e.to_string(),
+        },
+    }
     let message = json!({ "cmdline": cmdline, "pid": pid.to_string(), "hostname":machine_hostname,
                 "time": std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
