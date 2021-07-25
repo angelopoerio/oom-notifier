@@ -173,6 +173,7 @@ fn main() {
         let mut elasticsearch_index = "";
         let mut kafka_brokers = "";
         let mut kafka_topic = "";
+        let mut last_observed_timestamp = time::Duration::from_secs(0);
 
         if let Some(s_p) = matches.value_of("syslog-proto") {
             syslog_proto = s_p;
@@ -205,6 +206,15 @@ fn main() {
                 let entries = log_entries(Backend::Default, true).unwrap();
                 for entry in entries {
                     let lowercase_message = entry.message.to_lowercase();
+                    let timestamp_from_system_start = entry
+                        .timestamp_from_system_start
+                        .unwrap_or(time::Duration::from_secs(0));
+
+                    if timestamp_from_system_start <= last_observed_timestamp {
+                        continue;
+                    }
+
+                    last_observed_timestamp = timestamp_from_system_start;
 
                     /*
                         Example kernel log entries we want to detect:
