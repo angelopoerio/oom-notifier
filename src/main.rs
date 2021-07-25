@@ -250,7 +250,7 @@ fn main() {
                                         }
 
                                         if !kafka_topic.is_empty() && !kafka_brokers.is_empty() {
-                                            println!("Send event to Kafka");
+                                            println!("Sending event to Kafka");
 
                                             match notifiers::kafka_notifier(&oom_event.to_string(), kafka_topic.to_string(), kafka_brokers.split(",").map(str::to_string).collect()) {
                                                 Err(e) => println!("Error while sending the oom event to the configured Kafka: {}", e.to_string()),
