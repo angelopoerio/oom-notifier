@@ -6,6 +6,7 @@ use std::thread;
 use std::time;
 
 use clap::{App, Arg};
+use env_logger::Env;
 use lru::LruCache;
 use procfs;
 use rmesg::log_entries;
@@ -15,6 +16,9 @@ use signal_hook::flag;
 use tokio::runtime::Runtime;
 
 mod notifiers;
+
+#[macro_use]
+extern crate log;
 
 fn is_string_numeric(str: String) -> bool {
     for c in str.chars() {
@@ -40,8 +44,18 @@ fn get_hostname() -> String {
     }
 }
 
+fn get_kernel_version() -> String {
+    match fs::read_to_string("/proc/version") {
+        Ok(kernel_version) => return kernel_version.trim().to_string(),
+        Err(e) => return e.to_string(),
+    }
+}
+
 fn build_oom_event(pid: i32, cmdline: String) -> serde_json::Value {
-    let message = json!({ "cmdline": cmdline, "pid": pid.to_string(), "hostname": get_hostname(),
+    let message = json!({ "cmdline": cmdline,
+                    "pid": pid.to_string(),
+                    "hostname": get_hostname(),
+                    "kernel": get_kernel_version(),
                 "time": std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -57,6 +71,10 @@ fn main() {
     let processes = Arc::new(Mutex::new(LruCache::new(pid_max)));
     let procs_b = Arc::clone(&processes);
     let procs_d = Arc::clone(&processes);
+
+    let env = Env::default().filter_or("LOGGING_LEVEL", "info");
+
+    env_logger::init_from_env(env);
 
     let matches = App::new("oom-notifier")
         .version("0.1")
@@ -136,7 +154,7 @@ fn main() {
         sleep_time_d = time::Duration::from_millis(k_r.parse::<u64>().unwrap());
     }
 
-    println!("pid_max of the system is {}", pid_max);
+    info!("pid_max of the system is {}", pid_max);
 
     let term_b = Arc::new(AtomicBool::new(false));
     flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term_b)).unwrap();
@@ -157,13 +175,17 @@ fn main() {
                         Err(error) => error.to_string(),
                     };
 
+                    debug!(
+                        "Adding/Overwriting process {} with command line: {}",
+                        proc.stat.pid, cmdline
+                    );
                     procs.put(proc.stat.pid, cmdline);
                 }
             }
             std::thread::sleep(sleep_time_b);
         }
 
-        println!("Received termination signal. Exiting processes list refresher thread");
+        info!("Received termination signal. Exiting processes list refresher thread");
     });
 
     let dmesg_browser = thread::spawn(move || {
@@ -211,10 +233,15 @@ fn main() {
                         .unwrap_or(time::Duration::from_secs(0));
 
                     if timestamp_from_system_start <= last_observed_timestamp {
+                        debug!(
+                            "Skipping kernel log entry with timestamp from system start {:?}",
+                            timestamp_from_system_start
+                        );
                         continue;
                     }
 
                     last_observed_timestamp = timestamp_from_system_start;
+                    debug!("New log entry from the kernel: {}", entry.message);
 
                     /*
                         Example kernel log entries we want to detect:
@@ -231,30 +258,30 @@ fn main() {
                                         let full_cmdline = cmdline.clone();
                                         procs.pop(&pid);
                                         let oom_event = build_oom_event(pid, full_cmdline);
-                                        println!("{}", &oom_event);
+                                        info!("New OOM event -> {}", &oom_event);
 
                                         if !elasticsearch_index.is_empty()
                                             && !elasticsearch_server.is_empty()
                                         {
                                             let rt = Runtime::new().unwrap();
-                                            println!("Sending event to Elasticsearch");
+                                            info!("Sending event to Elasticsearch");
 
                                             match rt.block_on(notifiers::elasticsearch_notifier(
                                                 &oom_event,
                                                 elasticsearch_index.to_string(),
                                                 elasticsearch_server.to_string(),
                                             )) {
-                                                Err(e) => println!("Error while sending the oom event to the configured Elasticsearch: {}", e.to_string()),
-                                                _ => (),
+                                                Err(e) => error!("Error while sending the oom event to the configured Elasticsearch: {}", e.to_string()),
+                                                _ => info!("OOM event successfully indexed in Elasticsearch"),
                                             }
                                         }
 
                                         if !kafka_topic.is_empty() && !kafka_brokers.is_empty() {
-                                            println!("Sending event to Kafka");
+                                            info!("Sending event to Kafka");
 
                                             match notifiers::kafka_notifier(&oom_event.to_string(), kafka_topic.to_string(), kafka_brokers.split(",").map(str::to_string).collect()) {
-                                                Err(e) => println!("Error while sending the oom event to the configured Kafka: {}", e.to_string()),
-                                                _ => (),
+                                                Err(e) => error!("Error while sending the oom event to the configured Kafka: {}", e.to_string()),
+                                                _ => info!("OOM event successfully delivered to Kafka"),
                                             }
                                         }
 
@@ -262,18 +289,18 @@ fn main() {
                                             || (!syslog_proto.is_empty()
                                                 && !syslog_server.is_empty())
                                         {
-                                            println!("Sending event to syslog");
+                                            info!("Sending event to syslog");
                                             match notifiers::syslog_notifier(
                                                 &oom_event.to_string(),
                                                 syslog_proto.to_string(),
                                                 syslog_server.to_string(),
                                             ) {
-                                                Err(e) => println!("Error while sending the oom event to the configured syslog: {}", e.to_string()),
-                                                _ => (),
+                                                Err(e) => error!("Error while sending the oom event to the configured syslog: {}", e.to_string()),
+                                                _ => info!("OOM event successfully delivered to Syslog"),
                                             }
                                         }
                                     }
-                                    _ => (),
+                                    _ => error!("Detected OOM for pid {} but could not obtain informations about the process", pid),
                                 }
                             }
                         }
@@ -284,7 +311,7 @@ fn main() {
             std::thread::sleep(sleep_time_d);
         }
 
-        println!("Received termination signal. Exiting kernel log refresher thread");
+        info!("Received termination signal. Exiting kernel log refresher thread");
     });
 
     procs_browser.join().unwrap();
