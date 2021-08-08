@@ -52,6 +52,8 @@ Some example of userspace services that act as oom-killer:
 * [oomd](https://github.com/facebookincubator/oomd)
 * [earlyoom](https://github.com/rfjakob/earlyoom)
 
+If you want to prevent the daemon itself to be killed by the oom-killer you can adjust the **oom_adj** parameter as described [here](https://backdrift.org/oom-killer-how-to-create-oom-exclusions-in-linux)
+
 
 # Author
 Angelo Poerio <angelo.poerio@gmail.com>
