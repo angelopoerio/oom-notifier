@@ -92,7 +92,7 @@ fn main() {
             Arg::new("kernel-log-refresh")
                 .long("kernel-log-refresh")
                 .value_name("kernel_refresh")
-                .about("Set the frequency to refresh the list of processes in milliseconds")
+                .about("Set the frequency to check for new Kernel log entries")
                 .takes_value(true)
                 .default_value("10000"),
         )
