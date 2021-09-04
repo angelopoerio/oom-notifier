@@ -29,9 +29,11 @@ fn is_string_numeric(str: String) -> bool {
     return true;
 }
 
-fn get_pid_max() -> usize {
-    let content = fs::read_to_string("/proc/sys/kernel/pid_max").unwrap();
-    return content.trim().parse::<usize>().unwrap();
+fn get_pid_max() -> Result<usize, String> {
+    match fs::read_to_string("/proc/sys/kernel/pid_max") {
+        Err(e) => return Err(format!("Could not read /proc/sys/kernel/pid_max: {}", e)),
+        Ok(content) => return Ok(content.trim().parse::<usize>().unwrap()), // this is guaranteed to be an integer
+    }
 }
 
 fn get_hostname() -> String {
@@ -39,7 +41,13 @@ fn get_hostname() -> String {
         Ok(val) => return val,
         Err(_) => match fs::read_to_string("/proc/sys/kernel/hostname") {
             Ok(host_name) => return host_name.trim().to_string(),
-            Err(e) => return e.to_string(),
+            Err(e) => {
+                error!(
+                    "Could not read /proc/sys/kernel/hostname to obtain the hostname: {}",
+                    e
+                );
+                return "N/A".to_string();
+            }
         },
     }
 }
@@ -47,7 +55,13 @@ fn get_hostname() -> String {
 fn get_kernel_version() -> String {
     match fs::read_to_string("/proc/version") {
         Ok(kernel_version) => return kernel_version.trim().to_string(),
-        Err(e) => return e.to_string(),
+        Err(e) => {
+            error!(
+                "Could not read /proc/version to obtain the kernel version: {}",
+                e
+            );
+            return "N/A".to_string();
+        }
     }
 }
 
@@ -67,13 +81,18 @@ fn build_oom_event(pid: i32, cmdline: String) -> serde_json::Value {
 fn main() {
     let mut sleep_time_b = time::Duration::from_millis(5000);
     let mut sleep_time_d = time::Duration::from_millis(10000);
-    let pid_max = get_pid_max();
+    let mut pid_max = 0;
+
+    match get_pid_max() {
+        Ok(p_max) => pid_max = p_max,
+        Err(_) => std::process::exit(1),
+    }
+
     let processes = Arc::new(Mutex::new(LruCache::new(pid_max)));
     let procs_b = Arc::clone(&processes);
     let procs_d = Arc::clone(&processes);
 
     let env = Env::default().filter_or("LOGGING_LEVEL", "info");
-
     env_logger::init_from_env(env);
 
     let matches = App::new("oom-notifier")
@@ -147,39 +166,57 @@ fn main() {
         .get_matches();
 
     if let Some(p_r) = matches.value_of("process-refresh") {
-        sleep_time_b = time::Duration::from_millis(p_r.parse::<u64>().unwrap());
+        match p_r.parse::<u64>() {
+            Ok(val) => sleep_time_b = time::Duration::from_millis(val),
+            Err(e) => error!("Invalid value specified for the parameter process-refresh, fallback to the default one. Error : {}", e),
+        }
     }
 
     if let Some(k_r) = matches.value_of("kernel-log-refresh") {
-        sleep_time_d = time::Duration::from_millis(k_r.parse::<u64>().unwrap());
+        match k_r.parse::<u64>() {
+            Ok(val) => sleep_time_d = time::Duration::from_millis(val),
+            Err(e) => error!("Invalid value specified for the parameter kernel-log-refresh, fallback to the default one. Error : {}", e),
+        }
     }
 
     info!("pid_max of the system is {}", pid_max);
 
     let term_b = Arc::new(AtomicBool::new(false));
-    flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term_b)).unwrap();
-    flag::register(signal_hook::consts::SIGINT, Arc::clone(&term_b)).unwrap();
+    flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term_b))
+        .expect("Could not install the SIGTERM handler for the process-refresher thread");
+    flag::register(signal_hook::consts::SIGINT, Arc::clone(&term_b))
+        .expect("Could not install the SIGINT handler for the process-refresher thread");
 
     let term_d = Arc::new(AtomicBool::new(false));
-    flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term_d)).unwrap();
-    flag::register(signal_hook::consts::SIGINT, Arc::clone(&term_d)).unwrap();
+    flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term_d))
+        .expect("Could not install the SIGTERM handler for the kernel-log-refresher thread");
+    flag::register(signal_hook::consts::SIGINT, Arc::clone(&term_d))
+        .expect("Could not install the SIGINT handler for the kernel-log-refresher thread");
 
     let procs_browser = thread::spawn(move || {
         while !term_b.load(Ordering::Relaxed) {
             {
-                let mut procs = procs_b.lock().unwrap();
+                match procs_b.lock() {
+                    Ok(mut procs) => match procfs::process::all_processes() {
+                        Ok(procs_list) => {
+                            for proc in procs_list {
+                                let cmdline = match proc.cmdline() {
+                                    Ok(cmdline) => cmdline.join(" "),
+                                    Err(error) => error.to_string(),
+                                };
 
-                for proc in procfs::process::all_processes().unwrap() {
-                    let cmdline = match proc.cmdline() {
-                        Ok(cmdline) => cmdline.join(" "),
-                        Err(error) => error.to_string(),
-                    };
-
-                    debug!(
-                        "Adding/Overwriting process {} with command line: {}",
-                        proc.stat.pid, cmdline
-                    );
-                    procs.put(proc.stat.pid, cmdline);
+                                debug!(
+                                    "Adding/Overwriting process {} with command line: {}",
+                                    proc.stat.pid, cmdline
+                                );
+                                procs.put(proc.stat.pid, cmdline);
+                            }
+                        }
+                        Err(e) => error!("Could not list the processes running on the host: {}", e),
+                    },
+                    Err(e) => error!(
+                        "Could not acquire the process table lock in the process-refresher thread!. Error: {}", e
+                    ),
                 }
             }
             std::thread::sleep(sleep_time_b);
@@ -202,11 +239,11 @@ fn main() {
         }
 
         if let Some(s_s) = matches.value_of("syslog-server") {
-            syslog_server = s_s.clone();
+            syslog_server = s_s;
         }
 
         if let Some(e_s) = matches.value_of("elasticsearch-server") {
-            elasticsearch_server = e_s.clone();
+            elasticsearch_server = e_s;
         }
 
         if let Some(e_i) = matches.value_of("elasticsearch-index") {
@@ -223,37 +260,43 @@ fn main() {
 
         while !term_d.load(Ordering::Relaxed) {
             {
-                let mut procs = procs_d.lock().unwrap();
+                match procs_d.lock() {
+                    Ok(mut procs) => {
+                        let mut entries = Vec::new();
 
-                let entries = log_entries(Backend::Default, true).unwrap();
-                for entry in entries {
-                    let lowercase_message = entry.message.to_lowercase();
-                    let timestamp_from_system_start = entry
-                        .timestamp_from_system_start
-                        .unwrap_or(time::Duration::from_secs(0));
+                        match log_entries(Backend::Default, true) {
+                            Ok(ok_entries) => entries = ok_entries,
+                            Err(e) => error!("Could not get the log entries from the kernel ring buffer: {}", e),
+                        }
 
-                    if timestamp_from_system_start <= last_observed_timestamp {
-                        debug!(
+                        for entry in entries {
+                            let lowercase_message = entry.message.to_lowercase();
+                            let timestamp_from_system_start = entry
+                                .timestamp_from_system_start
+                                .unwrap_or(time::Duration::from_secs(0));
+
+                            if timestamp_from_system_start <= last_observed_timestamp {
+                                debug!(
                             "Skipping kernel log entry with timestamp from system start {:?}",
                             timestamp_from_system_start
                         );
-                        continue;
-                    }
+                                continue;
+                            }
 
-                    last_observed_timestamp = timestamp_from_system_start;
-                    debug!("New log entry from the kernel: {}", entry.message);
+                            last_observed_timestamp = timestamp_from_system_start;
+                            debug!("New log entry from the kernel: {}", entry.message);
 
-                    /*
-                        Example kernel log entries we want to detect:
-                        Out of memory: Killed process 9865 (oom_trigger) total-vm:7468696kB, ... a lot more stuff ...
-                    */
+                            /*
+                                Example kernel log entries we want to detect:
+                                Out of memory: Killed process 9865 (oom_trigger) total-vm:7468696kB, ... a lot more stuff ...
+                            */
 
-                    if lowercase_message.contains("out of memory:") {
-                        for part in lowercase_message.split_whitespace() {
-                            if is_string_numeric(part.to_string()) {
-                                let pid = part.to_string().parse::<i32>().unwrap();
+                            if lowercase_message.contains("out of memory:") {
+                                for part in lowercase_message.split_whitespace() {
+                                    if is_string_numeric(part.to_string()) {
+                                        let pid = part.to_string().parse::<i32>().unwrap(); // this is guaranteed to be a PID from the kernel log
 
-                                match procs.get(&pid) {
+                                        match procs.get(&pid) {
                                     Some(cmdline) => {
                                         let full_cmdline = cmdline.clone();
                                         procs.pop(&pid);
@@ -263,16 +306,20 @@ fn main() {
                                         if !elasticsearch_index.is_empty()
                                             && !elasticsearch_server.is_empty()
                                         {
-                                            let rt = Runtime::new().unwrap();
-                                            info!("Sending event to Elasticsearch");
+                                            match Runtime::new() {
+                                                Ok(rt) => {
+                                                    info!("Sending event to Elasticsearch");
 
-                                            match rt.block_on(notifiers::elasticsearch_notifier(
-                                                &oom_event,
-                                                elasticsearch_index.to_string(),
-                                                elasticsearch_server.to_string(),
-                                            )) {
-                                                Err(e) => error!("Error while sending the oom event to the configured Elasticsearch: {}", e.to_string()),
-                                                _ => info!("OOM event successfully indexed in Elasticsearch"),
+                                                    match rt.block_on(notifiers::elasticsearch_notifier(
+                                                        &oom_event,
+                                                        elasticsearch_index.to_string(),
+                                                        elasticsearch_server.to_string(),
+                                                    )) {
+                                                        Err(e) => error!("Error while sending the oom event to the configured Elasticsearch: {}", e.to_string()),
+                                                        _ => info!("OOM event successfully indexed in Elasticsearch"),
+                                                    }
+                                                },
+                                                Err(e) => error!("Could not create a tokyo runtime instance to send the event to Elasticsearch: {}", e)
                                             }
                                         }
 
@@ -302,9 +349,12 @@ fn main() {
                                     }
                                     _ => error!("Detected OOM for pid {} but could not obtain informations about the process", pid),
                                 }
+                                    }
+                                }
                             }
                         }
                     }
+                    Err(e) => error!("Could not acquire the process table lock in the process-refresher thread!. Error: {}", e),
                 }
             }
 
@@ -314,6 +364,10 @@ fn main() {
         info!("Received termination signal. Exiting kernel log refresher thread");
     });
 
-    procs_browser.join().unwrap();
-    dmesg_browser.join().unwrap();
+    procs_browser
+        .join()
+        .expect("Could not join the process-refresher thread");
+    dmesg_browser
+        .join()
+        .expect("Could not join the kernel-log-refresher thread");
 }
