@@ -19,3 +19,4 @@ syslog = "5.0.0"
 serde_json = "1.0"
 elasticsearch = "7.12.1-alpha.1"
 tokio = { version = "1.8.1", features = ["full"] }
+reqwest = { version = "0.11", features = ["json"] }

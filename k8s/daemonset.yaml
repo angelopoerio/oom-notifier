@@ -35,3 +35,5 @@ spec:
                   fieldPath: spec.nodeName
             - name: LOGGING_LEVEL
               value: "info" # adjust the logging level of the daemon here
+            - name: RUST_BACKTRACE
+              value: "1"

@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use elasticsearch::{http::transport::Transport, Elasticsearch, IndexParts};
 use kafka::producer::{Producer, Record, RequiredAcks};
+use serde_json::json;
 use syslog::{Facility, Formatter3164};
 
 pub fn syslog_notifier(message: &String, proto: String, server: String) -> Result<String, String> {
@@ -52,8 +53,8 @@ pub async fn elasticsearch_notifier(
             .send()
             .await
         {
-            Err(e) => return Err(e.to_string()),
-            Ok(response) => return Ok(response.status_code().to_string()),
+            Err(e) => Err(e.to_string()),
+            Ok(response) => Ok(response.status_code().to_string()),
         },
     }
 }
@@ -75,13 +76,46 @@ pub fn kafka_notifier(
             ))
         }
         Ok(mut producer) => match producer.send(&Record::from_value(&topic, message.as_bytes())) {
-            Err(e) => {
-                return Err(format!(
-                    "Error while producing the event to kafka: {}",
-                    e.to_string()
-                ))
-            }
-            Ok(_) => return Ok("".to_string()),
+            Err(e) => Err(format!(
+                "Error while producing the event to kafka: {}",
+                e.to_string()
+            )),
+            Ok(_) => Ok("".to_string()),
         },
+    }
+}
+
+pub async fn slack_notifier(
+    message: &serde_json::Value,
+    webhook: String,
+    channel: String,
+) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let text_to_display = format!(
+        "- cmdline:{}\n- pid:{}\n- hostname:{}\n- kernel:{}",
+        message["cmdline"].as_str().unwrap(),
+        message["pid"].as_str().unwrap(),
+        message["hostname"].as_str().unwrap(),
+        message["kernel"].as_str().unwrap()
+    );
+    let payload = json!({
+        "channel": channel,
+        "text": text_to_display,
+        "username": "oom-notifier",
+        "icon_emoji": ":firecracker:",
+    });
+    match client.post(webhook).json(&payload).send().await {
+        Ok(res) => {
+            if res.status() != 200 {
+                return Err(format!(
+                    "Status code is {} and and response is {:#?}",
+                    res.status(),
+                    res,
+                ));
+            }
+
+            return Ok("".to_string());
+        }
+        Err(e) => Err(e.to_string()),
     }
 }

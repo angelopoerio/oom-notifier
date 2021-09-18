@@ -8,7 +8,6 @@ use std::time;
 use clap::{App, Arg};
 use env_logger::Env;
 use lru::LruCache;
-use procfs;
 use rmesg::log_entries;
 use rmesg::Backend;
 use serde_json::json;
@@ -46,6 +45,7 @@ fn get_hostname() -> String {
                     "Could not read /proc/sys/kernel/hostname to obtain the hostname: {}",
                     e
                 );
+
                 return "N/A".to_string();
             }
         },
@@ -60,6 +60,7 @@ fn get_kernel_version() -> String {
                 "Could not read /proc/version to obtain the kernel version: {}",
                 e
             );
+
             return "N/A".to_string();
         }
     }
@@ -163,6 +164,22 @@ fn main() {
                 .takes_value(true)
                 .required(false)
         )
+        .arg(
+            Arg::new("slack-webhook")
+                .long("slack-webhook")
+                .value_name("slack_webhook")
+                .about("Slack webhook where the post the notifications")
+                .takes_value(true)
+                .required(false)
+        )
+        .arg(
+            Arg::new("slack-channel")
+                .long("slack-channel")
+                .value_name("slack_channel")
+                .about("The slack channel where to post the notifications")
+                .takes_value(true)
+                .required(false)
+        )
         .get_matches();
 
     if let Some(p_r) = matches.value_of("process-refresh") {
@@ -232,6 +249,8 @@ fn main() {
         let mut elasticsearch_index = "";
         let mut kafka_brokers = "";
         let mut kafka_topic = "";
+        let mut slack_webhook = "";
+        let mut slack_channel = "";
         let mut last_observed_timestamp = time::Duration::from_secs(0);
 
         if let Some(s_p) = matches.value_of("syslog-proto") {
@@ -256,6 +275,14 @@ fn main() {
 
         if let Some(k_t) = matches.value_of("kafka-topic") {
             kafka_topic = k_t;
+        }
+
+        if let Some(s_w) = matches.value_of("slack-webhook") {
+            slack_webhook = s_w;
+        }
+
+        if let Some(s_c) = matches.value_of("slack-channel") {
+            slack_channel = s_c;
         }
 
         while !term_d.load(Ordering::Relaxed) {
@@ -301,7 +328,7 @@ fn main() {
                                         let full_cmdline = cmdline.clone();
                                         procs.pop(&pid);
                                         let oom_event = build_oom_event(pid, full_cmdline);
-                                        info!("New OOM event -> {}", &oom_event);
+                                        info!("New OOM event: {}", &oom_event);
 
                                         if !elasticsearch_index.is_empty()
                                             && !elasticsearch_server.is_empty()
@@ -320,6 +347,20 @@ fn main() {
                                                     }
                                                 },
                                                 Err(e) => error!("Could not create a tokyo runtime instance to send the event to Elasticsearch: {}", e)
+                                            }
+                                        }
+
+                                        if !slack_channel.is_empty() && !slack_webhook.is_empty() {
+                                            match Runtime::new() {
+                                                Ok(rt) => {
+                                                    info!("Sending event to Slack on channel {}", slack_channel);
+
+                                                    match rt.block_on(notifiers::slack_notifier(&oom_event, slack_webhook.to_string(), slack_channel.to_string())) {
+                                                        Err(e) => error!("Error while sending the oom event to the configured slack webhook: {}", e.to_string()),
+                                                        _ => info!("OOM event successfully delivered to Slack"),
+                                                    }
+                                                },
+                                                Err(e) => error!("Could not create a tokyo runtime instance to send the event to Slack: {}", e),
                                             }
                                         }
 
@@ -366,8 +407,8 @@ fn main() {
 
     procs_browser
         .join()
-        .expect("Could not join the process-refresher thread");
+        .expect("Could not join() the process-refresher thread");
     dmesg_browser
         .join()
-        .expect("Could not join the kernel-log-refresher thread");
+        .expect("Could not join() the kernel-log-refresher thread");
 }

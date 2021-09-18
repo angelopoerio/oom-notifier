@@ -23,7 +23,7 @@ docker run -v /proc:/proc --privileged  oom-notifier /oom-notifier
 
 # How to use
 The daemon needs to run with enough privileges to access **/dev/kmsg** (kernel logs) so it can know about OOMs happening in the system.
-The events can be sent to different backends, at the moment **Syslog**, **Elasticsearch** and **Kafka** are supported.
+The events can be sent to different backends, at the moment **Syslog**, **Elasticsearch**, **Kafka** and **Slack** are supported.
 Send events to an elasticsearch cluster:
 ```bash
 ./oom-notifier --elasticsearch-server https://my-elasticsearch-cluster:9200 --elasticsearch-index my-index
@@ -38,6 +38,12 @@ Send events to a Kafka cluster:
 ```bash
 ./oom-notifier --kafka-topic oom-events --kafka-brokers broker1:9092,broker2:9092,broker3:9092
 ```
+
+Send events to a Slack channel (learn more [here](https://api.slack.com/messaging/webhooks)):
+```bash
+./oom-notifier --slack-webhook https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX --slack-channel #oom-notifications
+```
+
 
 You can adjust the logging level of the daemon setting the environment variable **LOGGING_LEVEL** (default level is info).
 
