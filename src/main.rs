@@ -103,6 +103,7 @@ fn main() {
         .arg(
             Arg::new("process-refresh")
                 .long("process-refresh")
+                .alias("pr")
                 .value_name("process_refresh")
                 .about("Set the frequency to refresh the list of processes in milliseconds")
                 .takes_value(true)
@@ -111,6 +112,7 @@ fn main() {
         .arg(
             Arg::new("kernel-log-refresh")
                 .long("kernel-log-refresh")
+                .alias("kr")
                 .value_name("kernel_refresh")
                 .about("Set the frequency to check for new Kernel log entries in milliseconds")
                 .takes_value(true)
@@ -119,6 +121,7 @@ fn main() {
         .arg(
             Arg::new("syslog-proto")
                 .long("syslog-proto")
+                .alias("sp")
                 .value_name("syslog_proto")
                 .about("Set protocol to connect to the syslog-server. Options: unix/tcp/udp")
                 .takes_value(true)
@@ -127,6 +130,7 @@ fn main() {
         .arg(
             Arg::new("syslog-server")
                 .long("syslog-server")
+                .alias("ss")
                 .value_name("syslog_server")
                 .about("Syslog server where to send the oom events. It must have the form hostname:port. If unix protocol is used this option is ignored")
                 .takes_value(true)
@@ -135,6 +139,7 @@ fn main() {
         .arg(
             Arg::new("elasticsearch-server")
                 .long("elasticsearch-server")
+                .alias("es")
                 .value_name("elasticsearch_server")
                 .about("Elasticsearch server where to send the events. It must have the format http://hostname:port")
                 .takes_value(true)
@@ -143,6 +148,7 @@ fn main() {
         .arg(
             Arg::new("elasticsearch-index")
                 .long("elasticsearch-index")
+                .alias("ei")
                 .value_name("elasticsearch_index")
                 .about("The name of the elasticsearch index where to index the oom events")
                 .takes_value(true)
@@ -151,6 +157,7 @@ fn main() {
         .arg(
             Arg::new("kafka-brokers")
                 .long("kafka-brokers")
+                .alias("kb")
                 .value_name("kafka_brokers")
                 .about("Kafka cluster where to send the events. It must have the format broker1:port1,broker2:port2, ... , brokerN:portN")
                 .takes_value(true)
@@ -159,6 +166,7 @@ fn main() {
         .arg(
             Arg::new("kafka-topic")
                 .long("kafka-topic")
+                .alias("kt")
                 .value_name("kafka_topic")
                 .about("The name of the kafka topic where to send the oom events")
                 .takes_value(true)
@@ -167,6 +175,7 @@ fn main() {
         .arg(
             Arg::new("slack-webhook")
                 .long("slack-webhook")
+                .alias("slw")
                 .value_name("slack_webhook")
                 .about("Slack webhook where the post the notifications")
                 .takes_value(true)
@@ -175,6 +184,7 @@ fn main() {
         .arg(
             Arg::new("slack-channel")
                 .long("slack-channel")
+                .alias("slc")
                 .value_name("slack_channel")
                 .about("The slack channel where to post the notifications")
                 .takes_value(true)
