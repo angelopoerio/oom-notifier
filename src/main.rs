@@ -86,7 +86,10 @@ fn main() {
 
     match get_pid_max() {
         Ok(p_max) => pid_max = p_max,
-        Err(_) => std::process::exit(1),
+        Err(e) => {
+            error!("Could not determine the pid_max of the system: {}", e);
+            std::process::exit(1)
+        }
     }
 
     let processes = Arc::new(Mutex::new(LruCache::new(pid_max)));
@@ -329,9 +332,15 @@ fn main() {
                             */
 
                             if lowercase_message.contains("out of memory:") {
+                                let mut pid_found = false;
                                 for part in lowercase_message.split_whitespace() {
                                     if is_string_numeric(part.to_string()) {
+                                        if pid_found {
+                                            debug!("I have already found the pid for this oom event, quitting the parsing loop");
+                                            break;
+                                        }
                                         let pid = part.to_string().parse::<i32>().unwrap(); // this is guaranteed to be a PID from the kernel log
+                                        pid_found = true;
 
                                         match procs.get(&pid) {
                                     Some(cmdline) => {
