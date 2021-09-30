@@ -28,6 +28,24 @@ fn is_string_numeric(str: String) -> bool {
     return true;
 }
 
+fn get_uptime() -> Result<time::Duration, String> {
+    match fs::read_to_string("/proc/uptime") {
+        Err(e) => return Err(format!("Could not read /proc/uptime: {}", e)),
+        Ok(content) => {
+            let uptime = time::Duration::from_secs_f32(
+                content
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("0")
+                    .parse::<f32>()
+                    .unwrap_or(0.0),
+            );
+
+            return Ok(uptime);
+        }
+    }
+}
+
 fn get_pid_max() -> Result<usize, String> {
     match fs::read_to_string("/proc/sys/kernel/pid_max") {
         Err(e) => return Err(format!("Could not read /proc/sys/kernel/pid_max: {}", e)),
@@ -265,6 +283,14 @@ fn main() {
         let mut slack_webhook = "";
         let mut slack_channel = "";
         let mut last_observed_timestamp = time::Duration::from_secs(0);
+
+        match get_uptime() {
+            Ok(uptime) => {
+                last_observed_timestamp = uptime;
+                info!("Machine uptime is {:#?}", last_observed_timestamp);
+            }
+            Err(err) => error!("Could not determine the machine uptime: {}", err),
+        }
 
         if let Some(s_p) = matches.value_of("syslog-proto") {
             syslog_proto = s_p;
