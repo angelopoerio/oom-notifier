@@ -1,5 +1,5 @@
 # About
-oom-notifier is a small daemon to be notified about oomed processes. It can report the full command line of the oomed process (something that it's not printed in the kernel ring buffer).
+oom-notifier is a small daemon to be notified about processes killed by the Linux [oom-killer](https://utcc.utoronto.ca/~cks/space/blog/linux/OOMKillerWhen). It can report the full command line of the oomed process (something that it's not printed in the kernel ring buffer).
 
 
 # How to build
