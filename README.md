@@ -11,7 +11,7 @@ if the build completes then you will find the compiled service at the following 
 
 
 # Run as a docker container
-It is possible to build a docker image of the service issuing the following command (after building the service):
+It is possible to build a docker image of the service issuing the following command:
 ```bash
 docker build -t oom-notifier .
 ```
