@@ -10,13 +10,17 @@
 # Build Stage
 FROM rust:latest AS builder
 WORKDIR /usr/src/
-RUN rustup target add x86_64-unknown-linux-musl
-RUN apt update && apt-get install -y pkg-config libssl-dev musl-tools && rm -rf /var/lib/apt/lists/*
+ENV OPENSSL_DIR=/usr \
+    PKG_CONFIG_ALLOW_CROSS=1 \
+    OPENSSL_STATIC=true
 
-RUN USER=root cargo new --bin oom-notifier
+RUN apt update && apt upgrade -y && apt-get install -y pkg-config libssl-dev musl-tools && rm -rf /var/lib/apt/lists/*
+RUN rustup target add x86_64-unknown-linux-musl
+ 
+RUN cargo new --bin oom-notifier
 WORKDIR /usr/src/oom-notifier
 COPY Cargo.toml Cargo.lock ./
-RUN cargo build --release --target x86_64-unknown-linux-musl
+RUN cargo build --release --target x86_64-unknown-linux-musl --features vendored
 
 COPY src ./src
 RUN cargo install --target x86_64-unknown-linux-musl --path .
