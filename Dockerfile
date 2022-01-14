@@ -28,5 +28,4 @@ RUN cargo build --release --target x86_64-unknown-linux-musl --features vendored
 FROM scratch
 
 COPY --from=builder /usr/src/oom-notifier/target/x86_64-unknown-linux-musl/release/oom-notifier /
-USER 1000
 CMD ["./oom-notifier"]
